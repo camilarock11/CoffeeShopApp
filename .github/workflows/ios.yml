@@ -1,0 +1,58 @@
+name: iOS CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+
+    - name: Detectar scheme e projeto
+      id: detect
+      run: |
+        project=$(ls *.xcodeproj | head -n 1)
+        workspace=$(ls *.xcworkspace 2>/dev/null | head -n 1)
+        scheme=$(xcodebuild -list -json | ruby -e "require 'json'; puts JSON.parse(STDIN.read)['project']['targets'][0]")
+
+        echo "scheme=$scheme" >> $GITHUB_OUTPUT
+        echo "project=$project" >> $GITHUB_OUTPUT
+        echo "workspace=$workspace" >> $GITHUB_OUTPUT
+
+    - name: Build para testes
+      run: |
+        device=$(xcrun xctrace list devices 2>&1 | grep -oE 'iPhone.*?[^\(]+' | head -1 | sed -e "s/ Simulator$//")
+
+        if [[ -n "${{ steps.detect.outputs.workspace }}" ]]; then
+          xcodebuild build-for-testing \
+            -workspace "${{ steps.detect.outputs.workspace }}" \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
+            -destination "platform=iOS Simulator,name=$device"
+        else
+          xcodebuild build-for-testing \
+            -project "${{ steps.detect.outputs.project }}" \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
+            -destination "platform=iOS Simulator,name=$device"
+        fi
+
+    - name: Rodar testes
+      run: |
+        device=$(xcrun xctrace list devices 2>&1 | grep -oE 'iPhone.*?[^\(]+' | head -1 | sed -e "s/ Simulator$//")
+
+        if [[ -n "${{ steps.detect.outputs.workspace }}" ]]; then
+          xcodebuild test-without-building \
+            -workspace "${{ steps.detect.outputs.workspace }}" \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
+            -destination "platform=iOS Simulator,name=$device"
+        else
+          xcodebuild test-without-building \
+            -project "${{ steps.detect.outputs.project }}" \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
+            -destination "platform=iOS Simulator,name=$device"
+        fi
